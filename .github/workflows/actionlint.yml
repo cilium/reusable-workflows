@@ -1,0 +1,19 @@
+# https://github.com/rhysd/actionlint/blob/main/docs/usage.md#use-actionlint-on-github-actions
+name: Lint GitHub Actions workflows
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup actionlint matcher
+        run: echo "::add-matcher::.github/actionlint-matcher.json"
+      - name: Check workflow files
+        uses: docker://rhysd/actionlint:1.6.23@sha256:02ccb6d91e4cb4a7b21eb99d5274d257e81ae667688d730e89d7ea0d6d35db91
+        with:
+          args: -color

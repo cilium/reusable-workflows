@@ -1,0 +1,55 @@
+name: Push Helm Chart
+description: 'Push helm chart via OCI'
+inputs:
+  name:
+    required: true
+    description: Helm chart name
+  path:
+    required: true
+    description: Path to the helm chart
+  version:
+    description: Version of the helm chart to set. If unspecifed, uses version in Chart.yaml.
+  values_file_changes:
+    description: |
+      Use this to patch the values.yaml before pushing the chart.
+      Expected format: {"propertyPath":"value", "propertyPath2":"value2"}
+  registry:
+    description: "OCI registry to push to. Eg: 'quay.io'"
+    required: true
+  registry_namespace:
+    required: true
+    description: 'Remote helm namespace/org. For example in quay.io/cilium-charts/cilium, cilium-charts is the namespace.'
+  registry_username:
+    description: "OCI registry username"
+    required: true
+  registry_password:
+    description: "OCI registry password"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Configure helm repositories
+      shell: bash
+      run: |
+        helm registry login ${{ inputs.registry }} -u ${{ inputs.registry_username }} -p ${{ inputs.registry_password }}
+    - name: Update helm chart values.yaml
+      if: ${{ inputs.values_file_changes }}
+      uses: mikefarah/yq@master
+      with:
+        cmd: |
+          # use cat to avoid quoting issues, and quote EOF to avoid
+          # interpreting the string
+          cat << 'EOF' > values-file-changes.json
+          ${{ inputs.values_file_changes }}
+          EOF
+          yq -i '. as $input | load("values-file-changes.json") | to_entries | .[] as $item ireduce ($input; setpath(($item.key | split("."); $item.value)))' ${{ inputs.path }}/values.yaml
+    - name: Push helm chart
+      shell: bash
+      run: |
+        if [[ -z "${{ inputs.version }}" ]]; then
+          helm package --dependency-update ${{ inputs.path }}
+        else
+          helm package --dependency-update ${{ inputs.path }} --version ${{ inputs.version }} --app-version ${{ inputs.version }}
+        fi
+        helm push ${{ inputs.name }}-*.tgz "oci://${{ inputs.registry }}/${{ inputs.registry_namespace }}"
