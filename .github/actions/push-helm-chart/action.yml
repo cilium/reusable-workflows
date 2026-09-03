@@ -31,25 +31,34 @@ runs:
   steps:
     - name: Configure helm repositories
       shell: bash
+      env:
+        REGISTRY_NAME: ${{ inputs.registry }}
+        REGISTRY_USERNAME: ${{ inputs.registry_username }}
+        REGISTRY_PASSWORD: ${{ inputs.registry_password }}
       run: |
-        helm registry login ${{ inputs.registry }} -u ${{ inputs.registry_username }} -p ${{ inputs.registry_password }}
+        helm registry login "$REGISTRY_NAME" -u "$REGISTRY_USERNAME" -p "$REGISTRY_PASSWORD"
     - name: Update helm chart values.yaml
       if: ${{ inputs.values_file_changes }}
       uses: mikefarah/yq@751d8ad57b84f1794661bc70c0afb92a22ad7b3c # v4.53.2
+      env:
+        HELM_PATH: ${{ inputs.path }}
+        VALUES_FILE_CHANGES: ${{ inputs.values_file_changes }}
       with:
         cmd: |
-          # use cat to avoid quoting issues, and quote EOF to avoid
-          # interpreting the string
-          cat << 'EOF' > values-file-changes.json
-          ${{ inputs.values_file_changes }}
-          EOF
-          yq -i '. as $input | load("values-file-changes.json") | to_entries | .[] as $item ireduce ($input; setpath(($item.key | split("."); $item.value)))' ${{ inputs.path }}/values.yaml
+          echo "$VALUES_FILE_CHANGES" > values-file-changes.json
+          yq -i '. as $input | load("values-file-changes.json") | to_entries | .[] as $item ireduce ($input; setpath(($item.key | split("."); $item.value)))' "$HELM_PATH/values.yaml"
     - name: Push helm chart
       shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        HELM_PATH: ${{ inputs.path }}
+        HELM_NAME: ${{ inputs.name }}
+        REGISTRY_NAME: ${{ inputs.registry }}
+        REGISTRY_NAMESPACE: ${{ inputs.registry_namespace }}
       run: |
-        if [[ -z "${{ inputs.version }}" ]]; then
-          helm package --dependency-update ${{ inputs.path }}
+        if [[ -z "$VERSION" ]]; then
+          helm package --dependency-update "$HELM_PATH"
         else
-          helm package --dependency-update ${{ inputs.path }} --version ${{ inputs.version }} --app-version ${{ inputs.version }}
+          helm package --dependency-update "$HELM_PATH" --version "$VERSION" --app-version "$VERSION"
         fi
-        helm push ${{ inputs.name }}-*.tgz "oci://${{ inputs.registry }}/${{ inputs.registry_namespace }}"
+        helm push "$HELM_NAME"-*.tgz "oci://$REGISTRY_NAME/$REGISTRY_NAMESPACE"
